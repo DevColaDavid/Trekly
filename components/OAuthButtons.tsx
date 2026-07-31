@@ -31,14 +31,6 @@ export default function OAuthButtons({ onError }: { onError: (message: string) =
         disabled={busyProvider !== null && busyProvider !== 'google'}
         fullWidth
       />
-      <Button
-        label="Continue with Apple"
-        variant="secondary"
-        onPress={() => handlePress('apple')}
-        loading={busyProvider === 'apple'}
-        disabled={busyProvider !== null && busyProvider !== 'apple'}
-        fullWidth
-      />
     </View>
   );
 }
