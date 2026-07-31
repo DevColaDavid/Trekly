@@ -18,8 +18,16 @@
       },
       "predictiveBackGestureEnabled": false
     },
+    "scheme": "scheduleapp",
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-web-browser",
+      "expo-notifications"
+    ]
   }
 }
