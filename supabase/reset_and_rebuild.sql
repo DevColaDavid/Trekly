@@ -1,8 +1,8 @@
 -- Nukes everything this app created in the public schema and rebuilds from
--- scratch (0001_init.sql + 0002_auto_enable_rls.sql + 0003_roles_and_editing.sql
--- + 0004_push_notification_triggers.sql, unchanged). Does NOT touch
--- auth.users — existing logins survive, their data doesn't. Paste this whole
--- file into the Supabase SQL editor and run once.
+-- scratch (0001_init.sql through 0008_event_details_and_notification_prefs.sql,
+-- unchanged). Does NOT touch auth.users — existing logins survive, their
+-- data doesn't. Paste this whole file into the Supabase SQL editor and run
+-- once.
 --
 -- NOTE: the send-push edge function must already be deployed separately
 -- (supabase/functions/send-push) — this script only wires the DB side.
@@ -12,6 +12,7 @@ drop trigger if exists on_auth_user_created on auth.users;
 drop event trigger if exists ensure_rls;
 
 drop table if exists public.push_tokens cascade;
+drop table if exists public.notification_prefs cascade;
 drop table if exists public.expense_splits cascade;
 drop table if exists public.expenses cascade;
 drop table if exists public.notes cascade;
@@ -32,6 +33,7 @@ drop function if exists public.is_group_admin(uuid) cascade;
 drop function if exists public.is_group_owner(uuid) cascade;
 drop function if exists public.transfer_group_ownership(uuid, uuid) cascade;
 drop function if exists public.notify_group(uuid, text, text, uuid) cascade;
+drop function if exists public.notify_group(uuid, text, text, uuid, text) cascade;
 drop function if exists public.on_message_insert_notify() cascade;
 drop function if exists public.on_event_insert_notify() cascade;
 drop function if exists public.on_poll_insert_notify() cascade;
@@ -172,6 +174,7 @@ create table public.events (
   location text,
   start_time timestamptz not null,
   end_time timestamptz,
+  all_day boolean not null default false,
   created_by uuid not null references public.profiles(id),
   created_at timestamptz not null default now()
 );
@@ -274,8 +277,9 @@ create policy "events readable by group members" on public.events
   for select using (public.is_group_member(group_id));
 create policy "events writable by group members" on public.events
   for insert with check (public.is_group_member(group_id) and created_by = auth.uid());
-create policy "events updatable by creator" on public.events
-  for update using (created_by = auth.uid());
+create policy "events updatable by creator or admin" on public.events
+  for update using (created_by = auth.uid() or public.is_group_admin(group_id))
+  with check (created_by = auth.uid() or public.is_group_admin(group_id));
 create policy "events deletable by creator or admin" on public.events
   for delete using (created_by = auth.uid() or public.is_group_admin(group_id));
 
@@ -303,14 +307,27 @@ create policy "polls writable by group members" on public.polls
   for insert with check (public.is_group_member(group_id) and created_by = auth.uid());
 create policy "polls deletable by creator or admin" on public.polls
   for delete using (created_by = auth.uid() or public.is_group_admin(group_id));
+create policy "polls updatable by creator or admin" on public.polls
+  for update using (created_by = auth.uid() or public.is_group_admin(group_id))
+  with check (created_by = auth.uid() or public.is_group_admin(group_id));
 
 create policy "poll_options readable by group members" on public.poll_options
   for select using (exists (
     select 1 from public.polls p where p.id = poll_id and public.is_group_member(p.group_id)
   ));
-create policy "poll_options writable by poll creator" on public.poll_options
+create policy "poll_options writable by poll creator or admin" on public.poll_options
   for insert with check (exists (
-    select 1 from public.polls p where p.id = poll_id and p.created_by = auth.uid()
+    select 1 from public.polls p where p.id = poll_id and (p.created_by = auth.uid() or public.is_group_admin(p.group_id))
+  ));
+create policy "poll_options updatable by poll creator or admin" on public.poll_options
+  for update using (exists (
+    select 1 from public.polls p where p.id = poll_id and (p.created_by = auth.uid() or public.is_group_admin(p.group_id))
+  )) with check (exists (
+    select 1 from public.polls p where p.id = poll_id and (p.created_by = auth.uid() or public.is_group_admin(p.group_id))
+  ));
+create policy "poll_options deletable by poll creator or admin" on public.poll_options
+  for delete using (exists (
+    select 1 from public.polls p where p.id = poll_id and (p.created_by = auth.uid() or public.is_group_admin(p.group_id))
   ));
 
 create policy "poll_votes readable by group members" on public.poll_votes
@@ -328,8 +345,9 @@ create policy "notes readable by group members" on public.notes
   for select using (public.is_group_member(group_id));
 create policy "notes writable by group members" on public.notes
   for insert with check (public.is_group_member(group_id) and created_by = auth.uid());
-create policy "notes editable by author" on public.notes
-  for update using (created_by = auth.uid()) with check (created_by = auth.uid());
+create policy "notes editable by author or admin" on public.notes
+  for update using (created_by = auth.uid() or public.is_group_admin(group_id))
+  with check (created_by = auth.uid() or public.is_group_admin(group_id));
 create policy "notes deletable by author or admin" on public.notes
   for delete using (created_by = auth.uid() or public.is_group_admin(group_id));
 
@@ -405,9 +423,11 @@ create policy "expense_splits readable by group members" on public.expense_split
   for select using (exists (
     select 1 from public.expenses e where e.id = expense_id and public.is_group_member(e.group_id)
   ));
-create policy "expense_splits writable by expense payer" on public.expense_splits
+-- editing an expense recomputes its splits (delete + reinsert), so admins
+-- need write access here too, matching "expenses editable by payer or admin".
+create policy "expense_splits writable by expense payer or admin" on public.expense_splits
   for insert with check (exists (
-    select 1 from public.expenses e where e.id = expense_id and e.paid_by = auth.uid()
+    select 1 from public.expenses e where e.id = expense_id and (e.paid_by = auth.uid() or public.is_group_admin(e.group_id))
   ));
 create policy "expense_splits deletable by expense payer or admin" on public.expense_splits
   for delete using (exists (
@@ -428,13 +448,27 @@ alter table public.push_tokens enable row level security;
 create policy "push_tokens manageable by owner" on public.push_tokens
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+create table public.notification_prefs (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  group_id uuid not null references public.groups(id) on delete cascade,
+  mute_chat boolean not null default false,
+  mute_events boolean not null default false,
+  mute_polls boolean not null default false,
+  primary key (user_id, group_id)
+);
+
+alter table public.notification_prefs enable row level security;
+
+create policy "notification_prefs manageable by self" on public.notification_prefs
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
 -- ==================== rebuild: 0004_push_notification_triggers.sql ====================
 -- ponytail: auth between this trigger and the edge function is a hardcoded
 -- shared secret (no secrets-manager was available at deploy time). Upgrade
 -- path: move both sides to Supabase Vault + an edge function secret.
 create extension if not exists pg_net;
 
-create function public.notify_group(target_group uuid, notif_title text, notif_body text, exclude_user uuid)
+create function public.notify_group(target_group uuid, notif_title text, notif_body text, exclude_user uuid, category text default null)
 returns void
 language plpgsql
 security definer set search_path = public
@@ -443,12 +477,12 @@ begin
   perform net.http_post(
     url := 'https://bkripfdrimleegazhvoh.supabase.co/functions/v1/send-push',
     headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', '6d8bd667d3689cc2a586341e1c15335cb8b2c19a4a36e0da'),
-    body := jsonb_build_object('group_id', target_group, 'title', notif_title, 'body', notif_body, 'exclude_user_id', exclude_user)
+    body := jsonb_build_object('group_id', target_group, 'title', notif_title, 'body', notif_body, 'exclude_user_id', exclude_user, 'category', category)
   );
 end;
 $$;
 
-revoke execute on function public.notify_group(uuid, text, text, uuid) from public, anon, authenticated;
+revoke execute on function public.notify_group(uuid, text, text, uuid, text) from public, anon, authenticated;
 
 create function public.on_message_insert_notify()
 returns trigger
@@ -459,7 +493,7 @@ declare
   sender_name text;
 begin
   select display_name into sender_name from public.profiles where id = new.user_id;
-  perform public.notify_group(new.group_id, coalesce(sender_name, 'Someone') || ' sent a message', left(new.body, 100), new.user_id);
+  perform public.notify_group(new.group_id, coalesce(sender_name, 'Someone') || ' sent a message', left(new.body, 100), new.user_id, 'chat');
   return new;
 end;
 $$;
@@ -474,7 +508,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  perform public.notify_group(new.group_id, 'New event: ' || new.title, to_char(new.start_time, 'Mon DD, HH12:MI AM'), new.created_by);
+  perform public.notify_group(new.group_id, 'New event: ' || new.title, to_char(new.start_time, 'Mon DD, HH12:MI AM'), new.created_by, 'events');
   return new;
 end;
 $$;
@@ -489,7 +523,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  perform public.notify_group(new.group_id, 'New poll', new.question, new.created_by);
+  perform public.notify_group(new.group_id, 'New poll', new.question, new.created_by, 'polls');
   return new;
 end;
 $$;

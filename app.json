@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "ScheduleApp",
-    "slug": "ScheduleApp",
+    "name": "Trekly",
+    "slug": "trekly",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -18,7 +18,7 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "scheme": "scheduleapp",
+    "scheme": "trekly",
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
@@ -27,7 +27,8 @@
       "expo-router",
       "expo-status-bar",
       "expo-web-browser",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-sharing"
     ]
   }
 }

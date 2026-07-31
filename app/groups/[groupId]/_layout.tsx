@@ -1,6 +1,6 @@
 import { Tabs, useGlobalSearchParams, useRouter } from 'expo-router';
-import { Pressable, Text } from 'react-native';
-import { colors } from '../../../lib/theme';
+import { Pressable, Text, View } from 'react-native';
+import { colors, spacing } from '../../../lib/theme';
 import { GroupProvider, useGroup } from '../../../lib/groupContext';
 
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
@@ -17,10 +17,16 @@ function BackButton() {
 }
 
 function GroupTabs() {
-  const { accentColor } = useGroup();
+  const { accentColor, error } = useGroup();
 
   return (
-    <Tabs
+    <View style={{ flex: 1 }}>
+      {error && (
+        <View style={{ backgroundColor: colors.dangerSoft, padding: spacing.sm }}>
+          <Text style={{ color: colors.danger, fontSize: 12, fontWeight: '600' }}>{error}</Text>
+        </View>
+      )}
+      <Tabs
       screenOptions={{
         headerShown: true,
         headerStyle: { backgroundColor: colors.surface },
@@ -56,7 +62,8 @@ function GroupTabs() {
         name="settings"
         options={{ title: 'Settings', tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} /> }}
       />
-    </Tabs>
+      </Tabs>
+    </View>
   );
 }
 

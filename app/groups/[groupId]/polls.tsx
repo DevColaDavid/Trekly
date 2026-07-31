@@ -26,22 +26,30 @@ export default function Polls() {
   const [optionInputs, setOptionInputs] = useState(['', '']);
   const [error, setError] = useState<string | null>(null);
   const [creatingPoll, setCreatingPoll] = useState(false);
+  const [editingPoll, setEditingPoll] = useState<PollWithOptions | null>(null);
+  const [editQuestion, setEditQuestion] = useState('');
+  const [editOptionLabels, setEditOptionLabels] = useState<string[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
     if (!session || !groupId) return;
-    const { data: pollRows } = await supabase
+    setError(null);
+    const { data: pollRows, error: pollErr } = await supabase
       .from('polls')
       .select('*')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false });
+    if (pollErr) setError(pollErr.message);
     if (!pollRows || pollRows.length === 0) {
       setPolls([]);
       setLoading(false);
       return;
     }
     const pollIds = pollRows.map((p) => p.id);
-    const { data: optionRows } = await supabase.from('poll_options').select('*').in('poll_id', pollIds);
-    const { data: voteRows } = await supabase.from('poll_votes').select('*').in('poll_id', pollIds);
+    const { data: optionRows, error: optErr } = await supabase.from('poll_options').select('*').in('poll_id', pollIds);
+    const { data: voteRows, error: voteErr } = await supabase.from('poll_votes').select('*').in('poll_id', pollIds);
+    if (optErr) setError(optErr.message);
+    if (voteErr) setError(voteErr.message);
 
     const merged: PollWithOptions[] = pollRows.map((p) => {
       const options = (optionRows ?? [])
@@ -99,6 +107,52 @@ export default function Polls() {
     }
   };
 
+  const openEditPoll = (poll: PollWithOptions) => {
+    setEditingPoll(poll);
+    setEditQuestion(poll.question);
+    setEditOptionLabels(poll.options.map((o) => o.label));
+    setError(null);
+  };
+
+  const cancelEditPoll = () => {
+    setEditingPoll(null);
+    setError(null);
+  };
+
+  // ponytail: rename-only — options can't be added or removed after
+  // creation, since removing one would cascade-delete its votes. Add
+  // add/remove support (guarded on voteCount === 0) if that's ever needed.
+  const saveEditPoll = async () => {
+    if (!editingPoll) return;
+    if (!editQuestion.trim() || editOptionLabels.some((l) => !l.trim())) {
+      setError('Question and all option labels required');
+      return;
+    }
+    setSavingEdit(true);
+    setError(null);
+    const { error: qErr } = await supabase.from('polls').update({ question: editQuestion.trim() }).eq('id', editingPoll.id);
+    if (qErr) {
+      setSavingEdit(false);
+      setError(qErr.message);
+      return;
+    }
+    for (let i = 0; i < editingPoll.options.length; i++) {
+      const opt = editingPoll.options[i];
+      const label = editOptionLabels[i].trim();
+      if (label !== opt.label) {
+        const { error: optErr } = await supabase.from('poll_options').update({ label }).eq('id', opt.id);
+        if (optErr) {
+          setSavingEdit(false);
+          setError(optErr.message);
+          return;
+        }
+      }
+    }
+    setSavingEdit(false);
+    setEditingPoll(null);
+    load();
+  };
+
   const vote = async (pollId: string, optionId: string) => {
     if (!session) return;
     const previous = polls;
@@ -152,14 +206,41 @@ export default function Polls() {
         renderItem={({ item }) => {
           const total = item.options.reduce((sum, o) => sum + o.voteCount, 0);
           const canManage = item.created_by === session?.user.id || isAdmin;
+
+          if (editingPoll?.id === item.id) {
+            return (
+              <Card style={styles.pollCard}>
+                <Input placeholder="Poll question" value={editQuestion} onChangeText={setEditQuestion} />
+                {editOptionLabels.map((label, i) => (
+                  <Input
+                    key={item.options[i].id}
+                    placeholder={`Option ${i + 1}`}
+                    value={label}
+                    onChangeText={(text) => setEditOptionLabels((prev) => prev.map((v, idx) => (idx === i ? text : v)))}
+                  />
+                ))}
+                {error && <Text style={styles.error}>{error}</Text>}
+                <View style={styles.editButtonRow}>
+                  <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={cancelEditPoll} disabled={savingEdit} />
+                  <Button label="Save" style={[styles.flex1, { backgroundColor: accentColor }]} onPress={saveEditPoll} loading={savingEdit} />
+                </View>
+              </Card>
+            );
+          }
+
           return (
             <Card style={styles.pollCard}>
               <View style={styles.questionRow}>
                 <Text style={styles.question}>{item.question}</Text>
                 {canManage && (
-                  <Pressable onPress={() => deletePoll(item)} hitSlop={6}>
-                    <Text style={styles.manageLinkDanger}>Delete</Text>
-                  </Pressable>
+                  <View style={styles.manageRow}>
+                    <Pressable onPress={() => openEditPoll(item)} hitSlop={6}>
+                      <Text style={styles.manageLink}>Edit</Text>
+                    </Pressable>
+                    <Pressable onPress={() => deletePoll(item)} hitSlop={6}>
+                      <Text style={styles.manageLinkDanger}>Delete</Text>
+                    </Pressable>
+                  </View>
                 )}
               </View>
               {item.options.map((o) => {
@@ -211,7 +292,11 @@ const styles = StyleSheet.create({
   pollCard: { gap: 10 },
   questionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   question: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 2, flex: 1 },
+  manageRow: { flexDirection: 'row', gap: 12 },
+  manageLink: { color: colors.primary, fontSize: 12, fontWeight: '700' },
   manageLinkDanger: { color: colors.danger, fontSize: 12, fontWeight: '700' },
+  editButtonRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  flex1: { flex: 1 },
   optionRow: { gap: 5 },
   optionTopRow: { flexDirection: 'row', justifyContent: 'space-between' },
   optionLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },

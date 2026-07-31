@@ -29,12 +29,14 @@ export default function Notes() {
 
   const load = useCallback(async () => {
     if (!groupId) return;
-    const { data } = await supabase
+    setError(null);
+    const { data, error } = await supabase
       .from('notes')
       .select('*')
       .eq('group_id', groupId)
       .order('updated_at', { ascending: false });
-    if (data) setNotes(data as unknown as Note[]);
+    if (error) setError(error.message);
+    else if (data) setNotes(data as unknown as Note[]);
     setLoading(false);
   }, [groupId]);
 

@@ -8,6 +8,7 @@ type GroupContextValue = {
   group: Group | null;
   role: GroupRole | null;
   loading: boolean;
+  error: string | null;
   isAdmin: boolean;
   isOwner: boolean;
   accentColor: string;
@@ -21,15 +22,19 @@ export function GroupProvider({ groupId, children }: { groupId: string; children
   const [group, setGroup] = useState<Group | null>(null);
   const [role, setRole] = useState<GroupRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!session || !groupId) return;
-    const [{ data: groupData }, { data: memberData }] = await Promise.all([
+    setError(null);
+    const [{ data: groupData, error: groupErr }, { data: memberData, error: memberErr }] = await Promise.all([
       supabase.from('groups').select('*').eq('id', groupId).single(),
       supabase.from('group_members').select('role').eq('group_id', groupId).eq('user_id', session.user.id).single(),
     ]);
-    if (groupData) setGroup(groupData as Group);
-    if (memberData) setRole(memberData.role as GroupRole);
+    if (groupErr) setError(groupErr.message);
+    else if (groupData) setGroup(groupData as Group);
+    if (memberErr) setError(memberErr.message);
+    else if (memberData) setRole(memberData.role as GroupRole);
     setLoading(false);
   }, [groupId, session]);
 
@@ -39,6 +44,7 @@ export function GroupProvider({ groupId, children }: { groupId: string; children
     group,
     role,
     loading,
+    error,
     isAdmin: role === 'owner' || role === 'admin',
     isOwner: role === 'owner',
     accentColor: group?.theme_color || colors.primary,

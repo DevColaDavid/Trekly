@@ -22,12 +22,14 @@ export default function Groups() {
 
   const load = useCallback(async () => {
     if (!session) return;
+    setError(null);
     const { data, error } = await supabase
       .from('groups')
       .select('*, group_members!inner(user_id)')
       .eq('group_members.user_id', session.user.id)
       .order('created_at', { ascending: false });
-    if (!error && data) setGroups(data as unknown as Group[]);
+    if (error) setError(error.message);
+    else if (data) setGroups(data as unknown as Group[]);
     setLoading(false);
   }, [session]);
 
@@ -87,6 +89,7 @@ export default function Groups() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View>
+          <Text style={styles.brand}>Trekly</Text>
           <Text style={styles.eyebrow}>Your circles</Text>
           <Text style={styles.title}>Groups</Text>
         </View>
@@ -149,6 +152,7 @@ export default function Groups() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: spacing.lg, gap: spacing.md, backgroundColor: colors.background },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 40 },
+  brand: { fontSize: 13, fontWeight: '800', color: colors.textFaint, letterSpacing: 0.2, marginBottom: 6 },
   eyebrow: { fontSize: 12, fontWeight: '700', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
   title: { fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   signOut: { color: colors.danger, fontWeight: '600', fontSize: 13 },

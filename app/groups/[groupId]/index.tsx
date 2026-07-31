@@ -8,9 +8,10 @@ import { confirmDelete } from '../../../lib/confirm';
 import { toDateKey, MONTH_LABELS } from '../../../lib/calendarMath';
 import { startOfWeek, addDays } from '../../../lib/calendarLayout';
 import { colorForString, colors, radius, spacing } from '../../../lib/theme';
+import { exportEventsAsIcs } from '../../../lib/ics';
 import MonthCalendarView from '../../../components/MonthCalendarView';
 import TimeGridView from '../../../components/TimeGridView';
-import EventFormModal from '../../../components/EventFormModal';
+import EventFormModal, { type Recurrence } from '../../../components/EventFormModal';
 import Button from '../../../components/ui/Button';
 import Card from '../../../components/ui/Card';
 import type { EventRow, RsvpStatus } from '../../../lib/types';
@@ -20,10 +21,11 @@ type ViewMode = 'month' | 'week' | 'day';
 export default function Calendar() {
   const { groupId } = useGlobalSearchParams<{ groupId: string }>();
   const { session } = useAuth();
-  const { isAdmin, accentColor } = useGroup();
+  const { group, isAdmin, accentColor } = useGroup();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [rsvps, setRsvps] = useState<Record<string, RsvpStatus>>({});
+  const [rsvpCounts, setRsvpCounts] = useState<Record<string, Record<RsvpStatus, number>>>({});
   const [rsvpPending, setRsvpPending] = useState<Record<string, boolean>>({});
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
@@ -40,26 +42,51 @@ export default function Calendar() {
     d.setHours(12, 0, 0, 0);
     return d;
   });
+  const [formEndTime, setFormEndTime] = useState(() => {
+    const d = new Date();
+    d.setHours(13, 0, 0, 0);
+    return d;
+  });
+  const [allDay, setAllDay] = useState(false);
+  const [recurrence, setRecurrence] = useState<Recurrence>('none');
+  const [recurrenceCount, setRecurrenceCount] = useState('4');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
     if (!session || !groupId) return;
-    const { data: eventData } = await supabase
+    setError(null);
+    const { data: eventData, error: eventErr } = await supabase
       .from('events')
       .select('*')
       .eq('group_id', groupId)
       .order('start_time', { ascending: true });
-    if (eventData) setEvents(eventData as EventRow[]);
+    if (eventErr) setError(eventErr.message);
+    else if (eventData) setEvents(eventData as EventRow[]);
 
-    const { data: rsvpData } = await supabase
-      .from('event_rsvps')
-      .select('event_id, status')
-      .eq('user_id', session.user.id);
-    if (rsvpData) {
-      const map: Record<string, RsvpStatus> = {};
-      for (const r of rsvpData) map[r.event_id] = r.status as RsvpStatus;
-      setRsvps(map);
+    const eventIds = (eventData ?? []).map((e) => e.id);
+    if (eventIds.length > 0) {
+      const { data: rsvpData, error: rsvpErr } = await supabase
+        .from('event_rsvps')
+        .select('event_id, user_id, status')
+        .in('event_id', eventIds);
+      if (rsvpErr) setError(rsvpErr.message);
+      else if (rsvpData) {
+        const mine: Record<string, RsvpStatus> = {};
+        const counts: Record<string, Record<RsvpStatus, number>> = {};
+        for (const r of rsvpData) {
+          const status = r.status as RsvpStatus;
+          if (r.user_id === session.user.id) mine[r.event_id] = status;
+          const c = (counts[r.event_id] ??= { going: 0, maybe: 0, no: 0 });
+          c[status]++;
+        }
+        setRsvps(mine);
+        setRsvpCounts(counts);
+      }
+    } else {
+      setRsvps({});
+      setRsvpCounts({});
     }
     setLoading(false);
   }, [groupId, session]);
@@ -116,6 +143,9 @@ export default function Calendar() {
     setLocation('');
     setFormDate(at ?? selectedDate);
     if (at) setFormTime(at);
+    setAllDay(false);
+    setRecurrence('none');
+    setRecurrenceCount('4');
     setShowForm(true);
     setError(null);
   };
@@ -126,8 +156,18 @@ export default function Calendar() {
     setLocation(item.location ?? '');
     setFormDate(new Date(item.start_time));
     setFormTime(new Date(item.start_time));
+    setFormEndTime(item.end_time ? new Date(item.end_time) : new Date(new Date(item.start_time).getTime() + 60 * 60000));
+    setAllDay(item.all_day);
     setShowForm(true);
     setError(null);
+  };
+
+  const addRecurrenceStep = (d: Date, r: Recurrence) => {
+    const next = new Date(d);
+    if (r === 'daily') next.setDate(next.getDate() + 1);
+    else if (r === 'weekly') next.setDate(next.getDate() + 7);
+    else if (r === 'monthly') next.setMonth(next.getMonth() + 1);
+    return next;
   };
 
   const saveEvent = async () => {
@@ -137,30 +177,79 @@ export default function Calendar() {
       setError('Title required');
       return;
     }
+    const count = Math.max(1, Math.min(52, Number(recurrenceCount) || 1));
     setSaving(true);
-    const start = new Date(formDate);
-    start.setHours(formTime.getHours(), formTime.getMinutes(), 0, 0);
-    const { error } = editingEvent
-      ? await supabase
-          .from('events')
-          .update({ title: title.trim(), location: location.trim() || null, start_time: start.toISOString() })
-          .eq('id', editingEvent.id)
-      : await supabase.from('events').insert({
+
+    let start = new Date(formDate);
+    let end: Date;
+    if (allDay) {
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+    } else {
+      start.setHours(formTime.getHours(), formTime.getMinutes(), 0, 0);
+      end = new Date(formDate);
+      end.setHours(formEndTime.getHours(), formEndTime.getMinutes(), 0, 0);
+      if (end <= start) end = new Date(start.getTime() + 60 * 60000);
+    }
+
+    if (editingEvent) {
+      const { error } = await supabase
+        .from('events')
+        .update({
+          title: title.trim(),
+          location: location.trim() || null,
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          all_day: allDay,
+        })
+        .eq('id', editingEvent.id);
+      setSaving(false);
+      if (error) {
+        setError(error.message);
+        return;
+      }
+    } else {
+      // ponytail: recurring events are materialized as independent rows (no
+      // series link) — editing/deleting only ever touches one occurrence.
+      // Add a recurrence_id column + "edit/delete all" if that's ever needed.
+      const rows = [];
+      for (let i = 0; i < (recurrence === 'none' ? 1 : count); i++) {
+        rows.push({
           group_id: groupId,
           title: title.trim(),
           location: location.trim() || null,
           start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          all_day: allDay,
           created_by: session.user.id,
         });
-    setSaving(false);
-    if (error) setError(error.message);
-    else {
-      setTitle('');
-      setLocation('');
-      setEditingEvent(null);
-      setShowForm(false);
-      load();
+        start = addRecurrenceStep(start, recurrence);
+        end = addRecurrenceStep(end, recurrence);
+      }
+      const { error } = await supabase.from('events').insert(rows);
+      setSaving(false);
+      if (error) {
+        setError(error.message);
+        return;
+      }
     }
+
+    setTitle('');
+    setLocation('');
+    setEditingEvent(null);
+    setShowForm(false);
+    load();
+  };
+
+  const exportCalendar = async () => {
+    setExporting(true);
+    try {
+      await exportEventsAsIcs(group?.name ?? 'calendar', events);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export calendar');
+    }
+    setExporting(false);
   };
 
   const handleMonthDayPress = (day: Date) => {
@@ -182,14 +271,29 @@ export default function Calendar() {
     confirmDelete('Delete event?', item.title, async () => {
       const { error } = await supabase.from('events').delete().eq('id', item.id);
       if (error) setError(error.message);
-      else load();
+      else {
+        setShowForm(false);
+        setEditingEvent(null);
+        load();
+      }
+    });
+  };
+
+  const bumpRsvpCount = (eventId: string, from: RsvpStatus | undefined, to: RsvpStatus) => {
+    setRsvpCounts((prev) => {
+      const c = { ...(prev[eventId] ?? { going: 0, maybe: 0, no: 0 }) };
+      if (from) c[from] = Math.max(0, c[from] - 1);
+      c[to]++;
+      return { ...prev, [eventId]: c };
     });
   };
 
   const rsvp = async (eventId: string, status: RsvpStatus) => {
     if (!session) return;
     const previous = rsvps[eventId];
+    if (previous === status) return;
     setRsvps((prev) => ({ ...prev, [eventId]: status }));
+    bumpRsvpCount(eventId, previous, status);
     setRsvpPending((prev) => ({ ...prev, [eventId]: true }));
     const { error } = await supabase
       .from('event_rsvps')
@@ -197,6 +301,7 @@ export default function Calendar() {
     setRsvpPending((prev) => ({ ...prev, [eventId]: false }));
     if (error) {
       setRsvps((prev) => ({ ...prev, [eventId]: previous as RsvpStatus }));
+      bumpRsvpCount(eventId, status, previous as RsvpStatus);
       setError(error.message);
     }
   };
@@ -208,7 +313,10 @@ export default function Calendar() {
           <Text style={styles.title}>Calendar</Text>
           {loading && <ActivityIndicator size="small" color={colors.textMuted} />}
         </View>
-        <Button label="+ Add Event" onPress={() => openCreateForm()} style={{ backgroundColor: accentColor }} />
+        <View style={styles.topBarActions}>
+          <Button label="Export" variant="secondary" onPress={exportCalendar} loading={exporting} disabled={events.length === 0} />
+          <Button label="+ Add Event" onPress={() => openCreateForm()} style={{ backgroundColor: accentColor }} />
+        </View>
       </View>
 
       <View style={styles.periodBar}>
@@ -268,11 +376,20 @@ export default function Calendar() {
         onDateChange={setFormDate}
         time={formTime}
         onTimeChange={setFormTime}
+        allDay={allDay}
+        onAllDayChange={setAllDay}
+        endTime={formEndTime}
+        onEndTimeChange={setFormEndTime}
+        recurrence={recurrence}
+        onRecurrenceChange={setRecurrence}
+        recurrenceCount={recurrenceCount}
+        onRecurrenceCountChange={setRecurrenceCount}
         error={error}
         saving={saving}
         accentColor={accentColor}
         onSave={saveEvent}
         onClose={() => { setShowForm(false); setEditingEvent(null); setError(null); }}
+        onDelete={editingEvent ? () => deleteEvent(editingEvent) : undefined}
       />
 
       <View style={styles.agenda}>
@@ -300,7 +417,13 @@ export default function Calendar() {
                 )}
               </View>
               <Text style={styles.eventTime}>
-                {new Date(item.start_time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                {item.all_day
+                  ? 'All day'
+                  : `${new Date(item.start_time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}${
+                      item.end_time
+                        ? ` – ${new Date(item.end_time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+                        : ''
+                    }`}
               </Text>
               {item.location && (
                 <Pressable onPress={() => openInMaps(item.location!)}>
@@ -310,6 +433,7 @@ export default function Calendar() {
               <View style={styles.rsvpRow}>
                 {(['going', 'maybe', 'no'] as RsvpStatus[]).map((s) => {
                   const active = rsvps[item.id] === s;
+                  const count = rsvpCounts[item.id]?.[s] ?? 0;
                   return (
                     <Pressable
                       key={s}
@@ -321,7 +445,10 @@ export default function Calendar() {
                       onPress={() => rsvp(item.id, s)}
                       disabled={rsvpPending[item.id]}
                     >
-                      <Text style={active ? styles.rsvpTextActive : styles.rsvpText}>{s}</Text>
+                      <Text style={active ? styles.rsvpTextActive : styles.rsvpText}>
+                        {s}
+                        {count > 0 ? ` (${count})` : ''}
+                      </Text>
                     </Pressable>
                   );
                 })}
@@ -339,6 +466,7 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, gap: spacing.lg },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  topBarActions: { flexDirection: 'row', gap: spacing.sm },
   title: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
   error: { color: colors.danger, fontSize: 13, fontWeight: '600' },
   periodBar: { gap: spacing.sm },

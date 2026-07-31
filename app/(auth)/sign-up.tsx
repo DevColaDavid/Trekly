@@ -28,6 +28,7 @@ export default function SignUp() {
   if (done) {
     return (
       <View style={styles.container}>
+        <Text style={styles.brand}>Trekly</Text>
         <Text style={styles.title}>Check your email</Text>
         <Text style={styles.body}>Confirm your address, then sign in.</Text>
         <Link href="/sign-in" style={styles.link}>
@@ -39,6 +40,7 @@ export default function SignUp() {
 
   return (
     <View style={styles.container}>
+      <Text style={styles.brand}>Trekly</Text>
       <Text style={styles.eyebrow}>Get started</Text>
       <Text style={styles.title}>Create account</Text>
       <View style={styles.form}>
@@ -64,6 +66,7 @@ export default function SignUp() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: spacing.xl, backgroundColor: colors.background },
+  brand: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.4, marginBottom: spacing.lg },
   eyebrow: { fontSize: 13, fontWeight: '700', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
   title: { fontSize: 30, fontWeight: '800', color: colors.text, letterSpacing: -0.5, marginBottom: spacing.xl },
   body: { fontSize: 15, color: colors.textMuted, marginTop: 4 },

@@ -1,8 +1,10 @@
-# ScheduleApp
+# Trekly
 
 A group calendar / chat / polls / notes / expenses app for planning trips and hangouts with friends — built for web, iOS, and Android from one codebase.
 
-Create a group, invite people with a code, and plan together: shared calendar with month/week/day views, group chat, polls, a checklist-capable notes board, and expense splitting.
+## About
+
+Trekly is the shared home base for a trip or hangout: one group, one invite code, everyone's calendar/chat/polls/notes/expenses in the same place instead of scattered across texts and spreadsheets. Create a group, invite people with a code, and plan together.
 
 ## Stack
 
@@ -14,13 +16,13 @@ Create a group, invite people with a code, and plan together: shared calendar wi
 
 - **Auth**: email/password and Google/Apple sign-in
 - **Groups**: create or join via invite code; roles are `owner` → `admin` → `member`, with the owner able to transfer ownership, promote admins, and delete the group
-- **Calendar**: month/week/day views, click-to-create on empty slots, RSVP (going/maybe/no), location with a tap-to-open-in-Maps link
+- **Calendar**: month/week/day views, click-to-create on empty slots, all-day and recurring events, RSVP with live per-status counts (going/maybe/no), location with a tap-to-open-in-Maps link, `.ics` export (web download / native share sheet)
 - **Chat**: realtime messages, edit/delete your own, admins can moderate
-- **Polls**: multi-option voting with live results
+- **Polls**: multi-option voting with live results, question/option editing
 - **Notes**: free text plus a checklist (packing lists, to-dos)
-- **Expenses**: log a cost, splits equally among current members, shows running balances (who owes / is owed)
-- **Group settings**: rename, per-group accent color, member management
-- **Push notifications**: new messages/events/polls notify the rest of the group (native only — see [Push notifications](#push-notifications) below)
+- **Expenses**: log or edit a cost, splits equally among current members, shows running balances (who owes / is owed) — balances still reconcile after someone leaves the group
+- **Group settings**: rename, per-group accent color, member management, per-category push mute (chat/events/polls)
+- **Push notifications**: new messages/events/polls notify the rest of the group, unless muted (native only — see [Push notifications](#push-notifications) below)
 
 ## Project structure
 

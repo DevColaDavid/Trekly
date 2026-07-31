@@ -24,6 +24,7 @@ export default function SignIn() {
 
   return (
     <View style={styles.container}>
+      <Text style={styles.brand}>Trekly</Text>
       <Text style={styles.eyebrow}>Welcome back</Text>
       <Text style={styles.title}>Sign in</Text>
       <View style={styles.form}>
@@ -48,6 +49,7 @@ export default function SignIn() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: spacing.xl, backgroundColor: colors.background },
+  brand: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.4, marginBottom: spacing.lg },
   eyebrow: { fontSize: 13, fontWeight: '700', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
   title: { fontSize: 30, fontWeight: '800', color: colors.text, letterSpacing: -0.5, marginBottom: spacing.xl },
   form: { gap: spacing.md },

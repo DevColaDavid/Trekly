@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const { group_id, title, body, exclude_user_id } = await req.json();
+  const { group_id, title, body, exclude_user_id, category } = await req.json();
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -26,7 +26,23 @@ Deno.serve(async (req: Request) => {
     .eq("group_id", group_id)
     .neq("user_id", exclude_user_id);
 
-  const userIds = (members ?? []).map((m: { user_id: string }) => m.user_id);
+  let userIds = (members ?? []).map((m: { user_id: string }) => m.user_id);
+  if (userIds.length === 0) {
+    return new Response(JSON.stringify({ sent: 0 }), { headers: { "Content-Type": "application/json" } });
+  }
+
+  const muteColumn: Record<string, string> = { chat: "mute_chat", events: "mute_events", polls: "mute_polls" };
+  const column = muteColumn[category as string];
+  if (column) {
+    const { data: prefs } = await supabase
+      .from("notification_prefs")
+      .select("user_id")
+      .eq("group_id", group_id)
+      .eq(column, true)
+      .in("user_id", userIds);
+    const muted = new Set((prefs ?? []).map((p: { user_id: string }) => p.user_id));
+    userIds = userIds.filter((id) => !muted.has(id));
+  }
   if (userIds.length === 0) {
     return new Response(JSON.stringify({ sent: 0 }), { headers: { "Content-Type": "application/json" } });
   }

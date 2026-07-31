@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ScrollView, Switch } from 'react-native';
 import { useFocusEffect, useGlobalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../lib/auth';
@@ -9,7 +9,13 @@ import { colors, radius, spacing } from '../../../lib/theme';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import Card from '../../../components/ui/Card';
-import type { GroupMember, GroupRole } from '../../../lib/types';
+import type { GroupMember, GroupRole, NotificationPrefs } from '../../../lib/types';
+
+const NOTIFICATION_CATEGORIES: { key: keyof Pick<NotificationPrefs, 'mute_chat' | 'mute_events' | 'mute_polls'>; label: string }[] = [
+  { key: 'mute_chat', label: 'Chat messages' },
+  { key: 'mute_events', label: 'New events' },
+  { key: 'mute_polls', label: 'New polls' },
+];
 
 const COLOR_SWATCHES = ['#4F46E5', '#16A34A', '#DC2626', '#D97706', '#0EA5E9', '#DB2777', '#7C3AED', '#0F766E'];
 
@@ -22,6 +28,7 @@ export default function GroupSettings() {
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notifPrefs, setNotifPrefs] = useState({ mute_chat: false, mute_events: false, mute_polls: false });
 
   useEffect(() => {
     if (group) setName(group.name);
@@ -38,6 +45,32 @@ export default function GroupSettings() {
   }, [groupId]);
 
   useFocusEffect(useCallback(() => { loadMembers(); }, [loadMembers]));
+
+  const loadNotifPrefs = useCallback(async () => {
+    if (!groupId || !session) return;
+    const { data } = await supabase
+      .from('notification_prefs')
+      .select('mute_chat, mute_events, mute_polls')
+      .eq('group_id', groupId)
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+    if (data) setNotifPrefs(data);
+  }, [groupId, session]);
+
+  useFocusEffect(useCallback(() => { loadNotifPrefs(); }, [loadNotifPrefs]));
+
+  const toggleNotifPref = async (key: keyof typeof notifPrefs) => {
+    if (!groupId || !session) return;
+    const next = { ...notifPrefs, [key]: !notifPrefs[key] };
+    setNotifPrefs(next);
+    const { error } = await supabase
+      .from('notification_prefs')
+      .upsert({ group_id: groupId, user_id: session.user.id, ...next }, { onConflict: 'user_id,group_id' });
+    if (error) {
+      setNotifPrefs(notifPrefs);
+      setError(error.message);
+    }
+  };
 
   const saveName = async () => {
     if (!groupId || !name.trim()) return;
@@ -163,6 +196,16 @@ export default function GroupSettings() {
       )}
 
       <Card style={styles.section}>
+        <Text style={styles.sectionLabel}>Notifications</Text>
+        {NOTIFICATION_CATEGORIES.map(({ key, label }) => (
+          <View key={key} style={styles.notifRow}>
+            <Text style={styles.notifLabel}>{label}</Text>
+            <Switch value={!notifPrefs[key]} onValueChange={() => toggleNotifPref(key)} trackColor={{ true: accentColor }} />
+          </View>
+        ))}
+      </Card>
+
+      <Card style={styles.section}>
         <Text style={styles.sectionLabel}>Members</Text>
         {members.map((m) => {
           const isSelf = m.user_id === session?.user.id;
@@ -218,6 +261,8 @@ const styles = StyleSheet.create({
   swatchRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
   swatch: { width: 36, height: 36, borderRadius: radius.pill, borderWidth: 2, borderColor: 'transparent' },
   swatchActive: { borderColor: colors.text },
+  notifRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
+  notifLabel: { fontSize: 14, color: colors.text, fontWeight: '600' },
   memberRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs, gap: spacing.sm },
   memberName: { fontSize: 15, fontWeight: '700', color: colors.text },
   memberRole: { fontSize: 12, color: colors.textMuted, fontWeight: '600', textTransform: 'capitalize' },

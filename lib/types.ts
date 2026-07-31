@@ -25,8 +25,17 @@ export type EventRow = {
   location: string | null;
   start_time: string;
   end_time: string | null;
+  all_day: boolean;
   created_by: string;
   created_at: string;
+};
+
+export type NotificationPrefs = {
+  user_id: string;
+  group_id: string;
+  mute_chat: boolean;
+  mute_events: boolean;
+  mute_polls: boolean;
 };
 
 export type RsvpStatus = 'going' | 'maybe' | 'no';
@@ -87,4 +96,5 @@ export type ExpenseSplit = {
   expense_id: string;
   user_id: string;
   share: number;
+  profiles?: { display_name: string } | null;
 };

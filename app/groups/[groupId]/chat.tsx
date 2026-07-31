@@ -23,12 +23,14 @@ export default function Chat() {
 
   const load = useCallback(async () => {
     if (!groupId) return;
-    const { data } = await supabase
+    setError(null);
+    const { data, error } = await supabase
       .from('messages')
       .select('*, profiles(display_name)')
       .eq('group_id', groupId)
       .order('created_at', { ascending: true });
-    if (data) setMessages(data as unknown as Message[]);
+    if (error) setError(error.message);
+    else if (data) setMessages(data as unknown as Message[]);
     setLoading(false);
   }, [groupId]);
 
