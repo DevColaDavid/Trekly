@@ -1,10 +1,20 @@
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { layoutDayEvents } from '../lib/calendarLayout';
 import { toDateKey, isSameDay } from '../lib/calendarMath';
 import { colorForString, colors, radius, spacing } from '../lib/theme';
 import type { EventRow } from '../lib/types';
 
-const HOUR_HEIGHT = 56;
+const HOUR_HEIGHT = 72;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 function formatHour(h: number) {
@@ -34,6 +44,25 @@ function slotDateFromOffset(day: Date, offsetY: number): Date {
 
 export default function TimeGridView({ days, eventsByDay, selectedDate, onSelectDate, onSlotPress, onEventPress }: Props) {
   const today = new Date();
+  const [scrollY, setScrollY] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+
+  const dayLayouts = useMemo(
+    () =>
+      days.map((day) => {
+        const dayEvents = eventsByDay[toDateKey(day)] ?? [];
+        return layoutDayEvents(dayEvents, new Date(day.getFullYear(), day.getMonth(), day.getDate()));
+      }),
+    [days, eventsByDay]
+  );
+
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setScrollY(e.nativeEvent.contentOffset.y);
+    setViewportHeight(e.nativeEvent.layoutMeasurement.height);
+  };
+  const handleScrollLayout = (e: LayoutChangeEvent) => {
+    setViewportHeight(e.nativeEvent.layout.height);
+  };
 
   return (
     <View style={styles.container}>
@@ -53,7 +82,27 @@ export default function TimeGridView({ days, eventsByDay, selectedDate, onSelect
         })}
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      {viewportHeight > 0 && (
+        <View style={styles.indicatorRow}>
+          <View style={styles.gutter} />
+          {dayLayouts.map((positioned, i) => {
+            const hasAbove = positioned.some(({ startMinutes, durationMinutes }) => (startMinutes + durationMinutes) / 60 * HOUR_HEIGHT < scrollY);
+            return (
+              <View key={i} style={styles.indicatorCell}>
+                {hasAbove && <Text style={styles.indicatorDot}>▲</Text>}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        onLayout={handleScrollLayout}
+        scrollEventThrottle={16}
+      >
         <View style={styles.gridRow}>
           <View style={styles.gutter}>
             {HOURS.map((h) => (
@@ -64,9 +113,8 @@ export default function TimeGridView({ days, eventsByDay, selectedDate, onSelect
           </View>
 
           <View style={styles.daysRow}>
-            {days.map((day) => {
-              const dayEvents = eventsByDay[toDateKey(day)] ?? [];
-              const positioned = layoutDayEvents(dayEvents, new Date(day.getFullYear(), day.getMonth(), day.getDate()));
+            {days.map((day, i) => {
+              const positioned = dayLayouts[i];
               return (
                 <Pressable
                   key={day.toISOString()}
@@ -106,6 +154,20 @@ export default function TimeGridView({ days, eventsByDay, selectedDate, onSelect
           </View>
         </View>
       </ScrollView>
+
+      {viewportHeight > 0 && (
+        <View style={styles.indicatorRow}>
+          <View style={styles.gutter} />
+          {dayLayouts.map((positioned, i) => {
+            const hasBelow = positioned.some(({ startMinutes }) => (startMinutes / 60) * HOUR_HEIGHT > scrollY + viewportHeight);
+            return (
+              <View key={i} style={styles.indicatorCell}>
+                {hasBelow && <Text style={styles.indicatorDot}>▼</Text>}
+              </View>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -132,7 +194,10 @@ const styles = StyleSheet.create({
   headerDateWrapToday: { backgroundColor: colors.primarySoft },
   headerDate: { fontSize: 14, fontWeight: '700', color: colors.text },
   headerDateActive: { color: '#fff' },
-  scroll: { maxHeight: 480 },
+  scroll: { maxHeight: 640 },
+  indicatorRow: { flexDirection: 'row', height: 20 },
+  indicatorCell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  indicatorDot: { fontSize: 14, color: colors.primary, fontWeight: '700' },
   gridRow: { flexDirection: 'row' },
   hourLabelSlot: { height: HOUR_HEIGHT, alignItems: 'flex-end', paddingRight: 6 },
   hourLabel: { fontSize: 10, color: colors.textFaint, fontWeight: '600', marginTop: -6 },

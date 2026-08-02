@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { getMonthGrid, isSameDay, WEEKDAY_LABELS, MONTH_LABELS } from '../lib/calendarMath';
+import { useEffect, useState } from 'react';
+import { View, Text, Pressable, TextInput, StyleSheet } from 'react-native';
+import { getMonthGrid, isSameDay, formatDateInput, parseDateInput, WEEKDAY_LABELS, MONTH_LABELS } from '../lib/calendarMath';
 import { radius, spacing } from '../lib/theme';
 
 type Props = {
@@ -9,10 +9,34 @@ type Props = {
 };
 
 export default function DatePickerGrid({ value, onChange }: Props) {
-  const [viewYear, setViewYear] = useState(value.getFullYear());
-  const [viewMonth, setViewMonth] = useState(value.getMonth());
+  const safeValue = isNaN(value.getTime()) ? new Date() : value;
+  const [viewYear, setViewYear] = useState(safeValue.getFullYear());
+  const [viewMonth, setViewMonth] = useState(safeValue.getMonth());
+  const [typedText, setTypedText] = useState(formatDateInput(safeValue));
+  const [typedError, setTypedError] = useState(false);
   const weeks = getMonthGrid(viewYear, viewMonth);
   const today = new Date();
+
+  const commitTyped = () => {
+    const parsed = parseDateInput(typedText, safeValue);
+    if (!parsed) {
+      setTypedError(true);
+      return;
+    }
+    setTypedError(false);
+    setViewYear(parsed.getFullYear());
+    setViewMonth(parsed.getMonth());
+    onChange(parsed);
+  };
+
+  useEffect(() => {
+    if (isNaN(value.getTime())) {
+      onChange(safeValue);
+      return;
+    }
+    setTypedText(formatDateInput(value));
+    setTypedError(false);
+  }, [value]);
 
   const goPrev = () => {
     const d = new Date(viewYear, viewMonth - 1, 1);
@@ -40,6 +64,17 @@ export default function DatePickerGrid({ value, onChange }: Props) {
           </Pressable>
         </View>
       </View>
+
+      <TextInput
+        style={[styles.typedInput, typedError && styles.typedInputError]}
+        value={typedText}
+        onChangeText={(t) => { setTypedText(t); setTypedError(false); }}
+        onBlur={commitTyped}
+        onSubmitEditing={commitTyped}
+        placeholder="MM/DD/YYYY or Aug 17"
+        placeholderTextColor="#7A7C8A"
+        keyboardType="numbers-and-punctuation"
+      />
 
       <View style={styles.weekRow}>
         {WEEKDAY_LABELS.map((w) => (
@@ -76,6 +111,19 @@ const styles = StyleSheet.create({
   navRow: { flexDirection: 'row', gap: 4 },
   navButton: { width: 24, height: 24, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: '#22232E' },
   navArrow: { color: 'white', fontSize: 15, fontWeight: '600' },
+  typedInput: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
+    backgroundColor: '#22232E',
+    borderRadius: radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  typedInputError: { borderColor: '#F87171' },
   weekRow: { flexDirection: 'row' },
   weekdayLabel: { flex: 1, color: '#7A7C8A', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 4 },
   dayCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },

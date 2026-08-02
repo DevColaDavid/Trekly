@@ -12,7 +12,7 @@ type Props = {
   onEventPress: (event: EventRow) => void;
 };
 
-const MAX_CHIPS_PER_DAY = 2;
+const MAX_CHIPS_PER_DAY = 3;
 
 export default function MonthCalendarView({ viewYear, viewMonth, eventsByDay, selectedDate, onSelectDate, onEventPress }: Props) {
   const weeks = getMonthGrid(viewYear, viewMonth);
@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   weekdayLabel: { flex: 1, color: colors.textFaint, fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 6 },
   dayCell: {
     flex: 1,
-    minHeight: 68,
+    minHeight: 100,
     borderRadius: radius.sm,
     padding: 3,
     gap: 2,

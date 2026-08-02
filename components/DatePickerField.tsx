@@ -17,7 +17,9 @@ export default function DatePickerField({ value, onChange, label = 'Date' }: Pro
       <Text style={styles.fieldLabel}>{label}</Text>
       <Pressable style={styles.trigger} onPress={() => setOpen(true)}>
         <Text style={styles.triggerText}>
-          {value.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+          {isNaN(value.getTime())
+            ? 'Select date'
+            : value.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
         </Text>
         <Text style={styles.triggerIcon}>📅</Text>
       </Pressable>

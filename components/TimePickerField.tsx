@@ -17,7 +17,7 @@ export default function TimePickerField({ value, onChange, label = 'Time' }: Pro
       <Text style={styles.fieldLabel}>{label}</Text>
       <Pressable style={styles.trigger} onPress={() => setOpen(true)}>
         <Text style={styles.triggerText}>
-          {value.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+          {isNaN(value.getTime()) ? 'Select time' : value.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
         </Text>
         <Text style={styles.triggerIcon}>🕐</Text>
       </Pressable>
