@@ -42,3 +42,4 @@ yarn-error.*
 /android
 .vercel
 .env*
+app/groups/trekly.code-workspace
