@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { registerForPushNotifications } from '../lib/push';
+import { Analytics } from '@vercel/analytics/react';
 
 function RootNavigation() {
   const { session, loading } = useAuth();
@@ -35,6 +37,7 @@ export default function RootLayout() {
       <AuthProvider>
         <RootNavigation />
         <StatusBar style="auto" />
+        {Platform.OS === 'web' && <Analytics />}
       </AuthProvider>
     </GestureHandlerRootView>
   );
