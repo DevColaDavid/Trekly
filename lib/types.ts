@@ -23,6 +23,8 @@ export type EventRow = {
   title: string;
   description: string | null;
   location: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
   start_time: string;
   end_time: string | null;
   all_day: boolean;

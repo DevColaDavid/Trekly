@@ -9,6 +9,8 @@ import { toDateKey, MONTH_LABELS } from '../../../lib/calendarMath';
 import { startOfWeek, addDays } from '../../../lib/calendarLayout';
 import { colorForString, colors, radius, spacing } from '../../../lib/theme';
 import { exportEventsAsIcs } from '../../../lib/ics';
+import { mapsSearchUrl } from '../../../lib/staticMap';
+import MapPreview from '../../../components/MapPreview';
 import MonthCalendarView from '../../../components/MonthCalendarView';
 import TimeGridView from '../../../components/TimeGridView';
 import EventFormModal, { type Recurrence } from '../../../components/EventFormModal';
@@ -36,6 +38,8 @@ export default function Calendar() {
   const [editingEvent, setEditingEvent] = useState<EventRow | null>(null);
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
+  const [locationLat, setLocationLat] = useState<number | null>(null);
+  const [locationLng, setLocationLng] = useState<number | null>(null);
   const [formDate, setFormDate] = useState(new Date());
   const [formTime, setFormTime] = useState(() => {
     const d = new Date();
@@ -141,6 +145,8 @@ export default function Calendar() {
     setEditingEvent(null);
     setTitle('');
     setLocation('');
+    setLocationLat(null);
+    setLocationLng(null);
     setFormDate(at ?? selectedDate);
     if (at) setFormTime(at);
     setAllDay(false);
@@ -151,12 +157,18 @@ export default function Calendar() {
   };
 
   const openEditForm = (item: EventRow) => {
+    const start = new Date(item.start_time);
+    const safeStart = isNaN(start.getTime()) ? new Date() : start;
+    const end = item.end_time ? new Date(item.end_time) : null;
+    const safeEnd = end && !isNaN(end.getTime()) ? end : new Date(safeStart.getTime() + 60 * 60000);
     setEditingEvent(item);
     setTitle(item.title);
     setLocation(item.location ?? '');
-    setFormDate(new Date(item.start_time));
-    setFormTime(new Date(item.start_time));
-    setFormEndTime(item.end_time ? new Date(item.end_time) : new Date(new Date(item.start_time).getTime() + 60 * 60000));
+    setLocationLat(item.location_lat);
+    setLocationLng(item.location_lng);
+    setFormDate(safeStart);
+    setFormTime(safeStart);
+    setFormEndTime(safeEnd);
     setAllDay(item.all_day);
     setShowForm(true);
     setError(null);
@@ -199,6 +211,8 @@ export default function Calendar() {
         .update({
           title: title.trim(),
           location: location.trim() || null,
+          location_lat: locationLat,
+          location_lng: locationLng,
           start_time: start.toISOString(),
           end_time: end.toISOString(),
           all_day: allDay,
@@ -219,6 +233,8 @@ export default function Calendar() {
           group_id: groupId,
           title: title.trim(),
           location: location.trim() || null,
+          location_lat: locationLat,
+          location_lng: locationLng,
           start_time: start.toISOString(),
           end_time: end.toISOString(),
           all_day: allDay,
@@ -237,6 +253,8 @@ export default function Calendar() {
 
     setTitle('');
     setLocation('');
+    setLocationLat(null);
+    setLocationLng(null);
     setEditingEvent(null);
     setShowForm(false);
     load();
@@ -263,8 +281,8 @@ export default function Calendar() {
     else setSelectedDate(new Date(item.start_time));
   };
 
-  const openInMaps = (location: string) => {
-    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`);
+  const openLocationInMaps = (loc: string, lat?: number | null, lng?: number | null) => {
+    Linking.openURL(mapsSearchUrl(loc, lat, lng));
   };
 
   const deleteEvent = (item: EventRow) => {
@@ -308,39 +326,40 @@ export default function Calendar() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.topBar}>
+      <View style={styles.headerBar}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>Calendar</Text>
           {loading && <ActivityIndicator size="small" color={colors.textMuted} />}
         </View>
+
+        <View style={styles.periodBar}>
+          <View style={styles.periodNavRow}>
+            <Pressable style={styles.navButton} onPress={goPrev} hitSlop={8}>
+              <Text style={styles.navArrow}>‹</Text>
+            </Pressable>
+            <Text style={styles.periodLabel}>{periodLabel}</Text>
+            <Pressable style={styles.navButton} onPress={goNext} hitSlop={8}>
+              <Text style={styles.navArrow}>›</Text>
+            </Pressable>
+          </View>
+          <View style={styles.modeSwitcher}>
+            {(['month', 'week', 'day'] as ViewMode[]).map((mode) => (
+              <Pressable
+                key={mode}
+                style={[styles.modeButton, viewMode === mode && { backgroundColor: accentColor }]}
+                onPress={() => setViewMode(mode)}
+              >
+                <Text style={[styles.modeButtonText, viewMode === mode && styles.modeButtonTextActive]}>
+                  {mode[0].toUpperCase() + mode.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
         <View style={styles.topBarActions}>
           <Button label="Export" variant="secondary" onPress={exportCalendar} loading={exporting} disabled={events.length === 0} />
           <Button label="+ Add Event" onPress={() => openCreateForm()} style={{ backgroundColor: accentColor }} />
-        </View>
-      </View>
-
-      <View style={styles.periodBar}>
-        <View style={styles.periodNavRow}>
-          <Pressable style={styles.navButton} onPress={goPrev} hitSlop={8}>
-            <Text style={styles.navArrow}>‹</Text>
-          </Pressable>
-          <Text style={styles.periodLabel}>{periodLabel}</Text>
-          <Pressable style={styles.navButton} onPress={goNext} hitSlop={8}>
-            <Text style={styles.navArrow}>›</Text>
-          </Pressable>
-        </View>
-        <View style={styles.modeSwitcher}>
-          {(['month', 'week', 'day'] as ViewMode[]).map((mode) => (
-            <Pressable
-              key={mode}
-              style={[styles.modeButton, viewMode === mode && { backgroundColor: accentColor }]}
-              onPress={() => setViewMode(mode)}
-            >
-              <Text style={[styles.modeButtonText, viewMode === mode && styles.modeButtonTextActive]}>
-                {mode[0].toUpperCase() + mode.slice(1)}
-              </Text>
-            </Pressable>
-          ))}
         </View>
       </View>
 
@@ -371,7 +390,10 @@ export default function Calendar() {
         title={title}
         onTitleChange={setTitle}
         location={location}
-        onLocationChange={setLocation}
+        onLocationChange={(v) => { setLocation(v); setLocationLat(null); setLocationLng(null); }}
+        locationLat={locationLat}
+        locationLng={locationLng}
+        onSelectPlace={(place) => { setLocation(place.label); setLocationLat(place.lat); setLocationLng(place.lng); }}
         date={formDate}
         onDateChange={setFormDate}
         time={formTime}
@@ -426,9 +448,12 @@ export default function Calendar() {
                     }`}
               </Text>
               {item.location && (
-                <Pressable onPress={() => openInMaps(item.location!)}>
+                <Pressable onPress={() => openLocationInMaps(item.location!, item.location_lat, item.location_lng)}>
                   <Text style={styles.eventLocation}>📍 {item.location}</Text>
                 </Pressable>
+              )}
+              {item.location && item.location_lat != null && item.location_lng != null && (
+                <MapPreview location={item.location} lat={item.location_lat} lng={item.location_lng} />
               )}
               <View style={styles.rsvpRow}>
                 {(['going', 'maybe', 'no'] as RsvpStatus[]).map((s) => {
@@ -464,12 +489,12 @@ export default function Calendar() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, gap: spacing.lg },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerBar: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   topBarActions: { flexDirection: 'row', gap: spacing.sm },
   title: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
   error: { color: colors.danger, fontSize: 13, fontWeight: '600' },
-  periodBar: { gap: spacing.sm },
+  periodBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md },
   periodNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   navButton: { width: 30, height: 30, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
   navArrow: { fontSize: 16, fontWeight: '700', color: colors.text },

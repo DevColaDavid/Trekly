@@ -1,9 +1,11 @@
-import { Modal, Pressable, View, Text, StyleSheet, KeyboardAvoidingView, Platform, Switch } from 'react-native';
+import { Modal, Pressable, View, Text, StyleSheet, KeyboardAvoidingView, Platform, Switch, ScrollView } from 'react-native';
 import { colors, radius, shadow, spacing } from '../lib/theme';
 import DatePickerField from './DatePickerField';
 import TimePickerField from './TimePickerField';
 import Button from './ui/Button';
 import Input from './ui/Input';
+import LocationInput from './LocationInput';
+import MapPreview from './MapPreview';
 
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 const RECURRENCE_OPTIONS: { value: Recurrence; label: string }[] = [
@@ -20,6 +22,9 @@ type Props = {
   onTitleChange: (v: string) => void;
   location: string;
   onLocationChange: (v: string) => void;
+  locationLat: number | null;
+  locationLng: number | null;
+  onSelectPlace: (place: { label: string; lat: number; lng: number }) => void;
   date: Date;
   onDateChange: (d: Date) => void;
   time: Date;
@@ -47,6 +52,9 @@ export default function EventFormModal({
   onTitleChange,
   location,
   onLocationChange,
+  locationLat,
+  locationLng,
+  onSelectPlace,
   date,
   onDateChange,
   time,
@@ -72,13 +80,17 @@ export default function EventFormModal({
         <Pressable style={styles.backdropTouchable} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.grabber} />
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <Text style={styles.heading}>{isEditing ? 'Edit event' : 'New event'}</Text>
 
           <Text style={styles.fieldLabel}>Title</Text>
           <Input placeholder="Event title" value={title} onChangeText={onTitleChange} autoFocus />
 
           <Text style={styles.fieldLabel}>Location</Text>
-          <Input placeholder="Address or place name (optional)" value={location} onChangeText={onLocationChange} />
+          <LocationInput value={location} onChange={onLocationChange} onSelectPlace={onSelectPlace} />
+          {locationLat != null && locationLng != null && (
+            <MapPreview location={location} lat={locationLat} lng={locationLng} />
+          )}
 
           <View style={styles.allDayRow}>
             <Text style={styles.fieldLabel}>All day</Text>
@@ -134,6 +146,7 @@ export default function EventFormModal({
           {isEditing && onDelete && (
             <Button label="Delete event" variant="danger" onPress={onDelete} disabled={saving} fullWidth />
           )}
+          </ScrollView>
 
           <View style={styles.buttonRow}>
             <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={onClose} disabled={saving} />
@@ -159,9 +172,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xl,
     padding: spacing.lg,
     paddingBottom: spacing.xl,
-    gap: spacing.sm,
+    maxHeight: '88%',
     ...shadow.popover,
   },
+  scrollContent: { gap: spacing.sm },
   grabber: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: spacing.xs },
   heading: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: spacing.xs },
   fieldLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, marginTop: spacing.xs },

@@ -172,6 +172,8 @@ create table public.events (
   title text not null,
   description text,
   location text,
+  location_lat double precision,
+  location_lng double precision,
   start_time timestamptz not null,
   end_time timestamptz,
   all_day boolean not null default false,
