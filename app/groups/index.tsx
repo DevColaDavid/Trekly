@@ -64,19 +64,9 @@ export default function Groups() {
     if (!session || !inviteCode.trim()) return;
     setError(null);
     setJoining(true);
-    const { data: group, error: findErr } = await supabase
-      .from('groups')
-      .select('id')
-      .eq('invite_code', inviteCode.trim())
-      .single();
-    if (findErr || !group) {
-      setJoining(false);
-      setError('Invite code not found');
-      return;
-    }
-    const { error: joinErr } = await supabase
-      .from('group_members')
-      .insert({ group_id: group.id, user_id: session.user.id });
+    const { error: joinErr } = await supabase.rpc('join_group_by_invite_code', {
+      code: inviteCode.trim(),
+    });
     setJoining(false);
     if (joinErr) setError(joinErr.message);
     else {

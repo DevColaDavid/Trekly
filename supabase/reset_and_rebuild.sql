@@ -272,6 +272,33 @@ create policy "group_members self-leave" on public.group_members
 create policy "group_members role updatable by owner" on public.group_members
   for update using (public.is_group_owner(group_id))
   with check (public.is_group_owner(group_id) and role in ('member', 'admin'));
+-- Invite-code join RPC: none of the SELECT policies above let a non-member
+-- look up a group by invite code, so the join flow used to always 404 on a
+-- valid code. This security-definer function looks up + joins in one step.
+create or replace function public.join_group_by_invite_code(code text)
+returns public.groups
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target public.groups;
+begin
+  select * into target from public.groups where invite_code = lower(trim(code));
+  if target.id is null then
+    raise exception 'Invite code not found';
+  end if;
+
+  insert into public.group_members (group_id, user_id)
+  values (target.id, auth.uid())
+  on conflict (group_id, user_id) do nothing;
+
+  return target;
+end;
+$$;
+
+grant execute on function public.join_group_by_invite_code(text) to authenticated;
+
 create policy "group_members removable by admin" on public.group_members
   for delete using (public.is_group_admin(group_id) and role <> 'owner');
 
